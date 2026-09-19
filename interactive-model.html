@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diesel Logistics Phase Model</title>
+<style>
+:root{
+  --bg:#0b1020;--panel:#121a2f;--panel2:#18233e;--text:#edf2ff;--muted:#9fb0d0;
+  --line:#2a385b;--accent:#68a4ff;--good:#55d49a;--warn:#f3c35b;--bad:#f0806f;--critical:#d85b8f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#09101f,#10172a 58%,#0a0f1c);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.app{max-width:1450px;margin:0 auto;padding:18px}
+header{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:clamp(24px,3vw,38px);line-height:1.08;margin:0 0 8px}
+.sub{color:var(--muted);max-width:900px}
+.badge{padding:7px 11px;border:1px solid var(--line);background:#0d1528;border-radius:999px;color:#cfe0ff;font-size:12px}
+.layout{display:grid;grid-template-columns:minmax(280px,365px) minmax(0,1fr);gap:16px}
+.panel{background:rgba(18,26,47,.94);border:1px solid var(--line);border-radius:16px;padding:14px}
+.controls{display:grid;gap:12px}
+.group{padding:11px;border:1px solid #263654;border-radius:12px;background:#10182b}
+.group h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#b8c8e8;margin:0 0 10px}
+.row{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center;margin:9px 0}
+.row label{color:#dbe5fb}
+input[type=number],select{width:100%;background:#0b1325;color:var(--text);border:1px solid #33486f;border-radius:9px;padding:9px 10px;font-size:16px}
+input[type=range]{width:100%}
+.rangeRow{display:grid;grid-template-columns:1fr 74px;gap:9px;align-items:center}
+.rangeRow output{font-variant-numeric:tabular-nums;color:#dbe9ff;text-align:right}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button{border:1px solid #3a527f;background:#172644;color:var(--text);border-radius:10px;padding:9px 13px;min-height:40px;cursor:pointer;font-weight:650}
+button.primary{background:#2a5ea8;border-color:#4d84d3}
+button:hover{filter:brightness(1.1)}
+.stage{min-width:0}
+.chartCard{position:relative;background:#09101e;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+canvas{display:block;width:100%;height:clamp(430px,58vw,720px);touch-action:none}
+.overlay{position:absolute;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap;max-width:70%}
+.pill{background:rgba(8,15,29,.82);border:1px solid #33496f;border-radius:999px;padding:6px 9px;font-size:12px;backdrop-filter:blur(5px)}
+.legend{position:absolute;right:12px;bottom:12px;background:rgba(8,15,29,.84);border:1px solid #33496f;border-radius:12px;padding:9px;min-width:170px}
+.grad{height:9px;border-radius:999px;background:linear-gradient(90deg,#4da8ff,#53d5a7,#f3cf62,#f38a6e,#cf5a8c)}
+.legendScale{display:flex;justify-content:space-between;color:#aebedc;font-size:11px;margin-top:4px}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.metric{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px;min-width:0}
+.metric .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#93a8ca}
+.metric .v{font-size:24px;font-weight:750;margin:3px 0;word-break:break-word}
+.metric .n{font-size:12px;color:var(--muted)}
+.timeline{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.timelineTop{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.timeline input{width:100%;margin-top:9px}
+.note{margin-top:12px;padding:11px 12px;border-left:3px solid #5278b9;background:#10182b;color:#b9c9e8;border-radius:8px}
+.class-manage{color:var(--good)}.class-stress{color:var(--warn)}.class-severe{color:#ffad61}.class-systemic{color:var(--bad)}.class-critical{color:#ff6eae}
+footer{color:#8295b8;margin:16px 2px 6px;font-size:12px}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.app{padding:10px}.metrics{grid-template-columns:1fr}.row{grid-template-columns:1fr}.overlay{max-width:92%}.legend{position:static;margin:8px;border-radius:10px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div>
+    <h1>Diesel Logistics Phase Model</h1>
+    <div class="sub">Interactive 3D stress surface for diesel price × effective petroleum shortage × duration. Drag the surface to rotate, use the mouse wheel to zoom, or enter custom scenario values. Playback advances shock duration from day 7 to day 365.</div>
+  </div>
+  <div class="badge">Research model • not a forecast</div>
+</header>
+
+<div class="layout">
+  <aside class="panel controls">
+    <div class="group">
+      <h2>Shock inputs</h2>
+      <div class="row"><label for="diesel">Diesel price ($/gal)</label><input id="diesel" type="number" min="4" max="24" step="0.25" value="14"></div>
+      <div class="row"><label for="shortage">Effective shortage (%)</label><input id="shortage" type="number" min="0" max="40" step="1" value="20"></div>
+      <div class="row"><label for="daysNum">Duration (days)</label><input id="daysNum" type="number" min="7" max="365" step="1" value="90"></div>
+    </div>
+
+    <div class="group">
+      <h2>Freight inputs</h2>
+      <div class="row"><label for="mpg">Truck fuel economy (mpg)</label><input id="mpg" type="number" min="4.5" max="12" step="0.1" value="7"></div>
+      <div class="row"><label for="payload">Payload (lb)</label><input id="payload" type="number" min="10000" max="50000" step="1000" value="35000"></div>
+      <div class="row"><label for="deadhead">Deadhead / repositioning (%)</label><input id="deadhead" type="number" min="0" max="50" step="1" value="15"></div>
+    </div>
+
+    <div class="group">
+      <h2>Resilience inputs</h2>
+      <div class="row"><label for="inventory">Inventory cover (days)</label><input id="inventory" type="number" min="5" max="90" step="1" value="21"></div>
+      <div class="rangeRow"><label for="adapt">Adaptation strength</label><input id="adapt" type="range" min="0" max="100" step="1" value="50"></div>
+      <div class="rangeRow"><span></span><output id="adaptOut">50%</output></div>
+      <div class="rangeRow"><label for="pass">Fuel-cost pass-through</label><input id="pass" type="range" min="0" max="100" step="1" value="85"></div>
+      <div class="rangeRow"><span></span><output id="passOut">85%</output></div>
+    </div>
+
+    <div class="actions">
+      <button id="play" class="primary" type="button">▶ Play duration</button>
+      <button id="reset" type="button">Reset view</button>
+      <select id="speed" aria-label="Playback speed">
+        <option value="1">1× speed</option>
+        <option value="2">2× speed</option>
+        <option value="4">4× speed</option>
+        <option value="8">8× speed</option>
+      </select>
+    </div>
+
+    <div class="note">The 90-day surface is anchored to the Deep Research central LESI table. Continuous values are interpolated; values beyond published anchor points are extrapolated. Duration, resilience, and freight inputs modify that surface with transparent scenario assumptions.</div>
+  </aside>
+
+  <main class="stage">
+    <div class="chartCard">
+      <canvas id="scene" aria-label="Interactive three-dimensional logistics stress surface"></canvas>
+      <div class="overlay">
+        <div class="pill">X: diesel price</div>
+        <div class="pill">Y: effective shortage</div>
+        <div class="pill">Z: LESI stress</div>
+        <div class="pill" id="scenarioPill"></div>
+      </div>
+      <div class="legend">
+        <div class="grad"></div>
+        <div class="legendScale"><span>Manageable</span><span>Critical</span></div>
+      </div>
+    </div>
+
+    <section class="metrics">
+      <div class="metric"><div class="k">Modeled LESI</div><div class="v" id="lesiVal">—</div><div class="n" id="classVal">—</div></div>
+      <div class="metric"><div class="k">Loaded-mile cost</div><div class="v" id="mileVal">—</div><div class="n">ATRI nonfuel anchor + selected fuel assumptions</div></div>
+      <div class="metric"><div class="k">Fuel cost / lb</div><div class="v" id="lbVal">—</div><div class="n">1,000 loaded-mile reference haul</div></div>
+      <div class="metric"><div class="k">Feedback proxy Rₗ</div><div class="v" id="rlVal">—</div><div class="n" id="rlNote">—</div></div>
+    </section>
+
+    <section class="timeline">
+      <div class="timelineTop">
+        <strong>Shock-duration playback</strong>
+        <span id="dayLabel">Day 90</span>
+      </div>
+      <input id="days" type="range" min="7" max="365" step="1" value="90">
+      <div class="n" id="thresholdText">—</div>
+    </section>
+  </main>
+</div>
+
+<footer>Model status: exploratory decision-support visualization. “Systemic instability” and “critical distribution failure” are model risk bands, not forecasts or official definitions.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var priceGrid=[4,6,8,10,12,14,16,20,24];
+  var shortageGrid=[0,5,10,20,30,40];
+
+  // 90-day LESI anchor surface. Published report values are preserved for
+  // $8–$20 and 0–30% shortage. Edge values are conservative extrapolations.
+  var zGrid=[
+    [0.5,1.5,4.0,8.7,13.4,18.0,22.6,31.7,40.5],
+    [4.5,9.5,14.3,18.9,23.6,28.1,32.7,41.7,50.5],
+    [13.0,18.5,24.0,28.6,33.2,37.8,42.3,51.3,60.0],
+    [31.0,36.5,42.2,46.7,51.3,55.8,60.3,68.5,75.0],
+    [47.0,52.5,58.0,62.5,67.0,71.4,74.3,79.3,83.5],
+    [60.0,65.0,70.0,74.0,78.0,82.0,85.0,90.0,93.0]
+  ];
+
+  var durationDays=[7,14,30,60,90,180,365];
+  var durationBase=[0.42,0.53,0.72,0.90,1.00,1.18,1.33];
+  var durationExtra=[0.00,0.00,0.00,0.00,0.00,0.05,0.14];
+
+  var el={
+    canvas:document.getElementById("scene"),diesel:document.getElementById("diesel"),
+    shortage:document.getElementById("shortage"),daysNum:document.getElementById("daysNum"),
+    days:document.getElementById("days"),mpg:document.getElementById("mpg"),
+    payload:document.getElementById("payload"),deadhead:document.getElementById("deadhead"),
+    inventory:document.getElementById("inventory"),adapt:document.getElementById("adapt"),
+    pass:document.getElementById("pass"),adaptOut:document.getElementById("adaptOut"),
+    passOut:document.getElementById("passOut"),play:document.getElementById("play"),
+    reset:document.getElementById("reset"),speed:document.getElementById("speed"),
+    lesiVal:document.getElementById("lesiVal"),classVal:document.getElementById("classVal"),
+    mileVal:document.getElementById("mileVal"),lbVal:document.getElementById("lbVal"),
+    rlVal:document.getElementById("rlVal"),rlNote:document.getElementById("rlNote"),
+    dayLabel:document.getElementById("dayLabel"),thresholdText:document.getElementById("thresholdText"),
+    scenarioPill:document.getElementById("scenarioPill")
+  };
+
+  var state={yaw:-0.72,pitch:0.55,zoom:1.0,drag:false,lastX:0,lastY:0,playing:false,timer:null};
+
+  function clamp(v,a,b){v=Number(v);return Number.isFinite(v)?Math.min(b,Math.max(a,v)):a}
+  function lerp(a,b,t){return a+(b-a)*t}
+  function findBracket(arr,v){
+    if(v<=arr[0])return [0,1,0];
+    if(v>=arr[arr.length-1])return [arr.length-2,arr.length-1,1];
+    for(var i=0;i<arr.length-1;i++){
+      if(v>=arr[i]&&v<=arr[i+1]) return [i,i+1,(v-arr[i])/(arr[i+1]-arr[i])];
+    }
+    return [0,1,0];
+  }
+  function interp1(xs,ys,x){
+    var b=findBracket(xs,x);
+    return lerp(ys[b[0]],ys[b[1]],b[2]);
+  }
+  function base90(price,shortage){
+    var bx=findBracket(priceGrid,price), by=findBracket(shortageGrid,shortage);
+    var z00=zGrid[by[0]][bx[0]], z10=zGrid[by[0]][bx[1]];
+    var z01=zGrid[by[1]][bx[0]], z11=zGrid[by[1]][bx[1]];
+    var za=lerp(z00,z10,bx[2]), zb=lerp(z01,z11,bx[2]);
+    return lerp(za,zb,by[2]);
+  }
+  function inputs(){
+    var o={};
+    o.price=clamp(el.diesel.value,4,24);
+    o.shortage=clamp(el.shortage.value,0,40);
+    o.days=clamp(el.days.value,7,365);
+    o.mpg=clamp(el.mpg.value,4.5,12);
+    o.payload=clamp(el.payload.value,10000,50000);
+    o.deadhead=clamp(el.deadhead.value,0,50)/100;
+    o.inventory=clamp(el.inventory.value,5,90);
+    o.adapt=clamp(el.adapt.value,0,100)/100;
+    o.pass=clamp(el.pass.value,0,100)/100;
+    return o;
+  }
+  function durationFactor(days,shortage){
+    var base=interp1(durationDays,durationBase,days);
+    var extra=interp1(durationDays,durationExtra,days)*(shortage/40);
+    return base+extra;
+  }
+  function model(i){
+    var raw=base90(i.price,i.shortage)*durationFactor(i.days,i.shortage);
+
+    // Baseline central settings: adaptation=.50, pass-through=.85, inventory=21,
+    // mpg=7, deadhead=.15, payload=35k. Inputs scale stress around this center.
+    var adaptAdj=1+(0.50-i.adapt)*0.70;
+    var passAdj=1+(0.85-i.pass)*0.28;
+    var invAdj=1+clamp((21-i.inventory)/100,-0.22,0.16)*(i.shortage/40);
+    var centralCost=1.854+i.price/7;
+    var selectedCost=1.854+i.price/i.mpg;
+    var freightAdj=Math.pow(selectedCost/centralCost,0.42)*
+                   Math.pow((1+i.deadhead)/1.15,0.24)*
+                   Math.pow(35000/i.payload,0.08);
+
+    var lesi=clamp(raw*adaptAdj*passAdj*invAdj*freightAdj,0,100);
+    var allMile=1.854+i.price/i.mpg;
+    var loadedMile=allMile*(1+i.deadhead);
+    var fuelTrip=(1000*(1+i.deadhead)/i.mpg)*i.price;
+    var fuelLb=fuelTrip/i.payload;
+
+    // Conceptual local feedback proxy for visualization only.
+    var rl=0.63+
+      0.0105*i.shortage+
+      0.014*Math.max(0,i.price-8)+
+      0.11*Math.log(1+i.days/30)/Math.log(1+365/30)-
+      0.24*i.adapt-
+      0.08*i.pass+
+      0.06*Math.max(0,(21-i.inventory)/21);
+    rl=clamp(rl,0.35,1.45);
+
+    return {lesi:lesi,allMile:allMile,loadedMile:loadedMile,fuelLb:fuelLb,rl:rl};
+  }
+  function classify(v){
+    if(v<15)return ["Manageable / adaptation","class-manage"];
+    if(v<30)return ["Stress","class-stress"];
+    if(v<50)return ["Severe stress","class-severe"];
+    if(v<70)return ["Systemic-instability risk","class-systemic"];
+    return ["Critical-distribution-failure risk","class-critical"];
+  }
+  function fmtMoney(v){return "$"+v.toFixed(2)}
+  function findCrossing(i,target){
+    for(var d=7;d<=365;d++){
+      var q=Object.assign({},i,{days:d});
+      if(model(q).lesi>=target)return d;
+    }
+    return null;
+  }
+
+  function updateReadout(){
+    var i=inputs(), m=model(i), c=classify(m.lesi);
+    el.adaptOut.textContent=Math.round(i.adapt*100)+"%";
+    el.passOut.textContent=Math.round(i.pass*100)+"%";
+    el.daysNum.value=Math.round(i.days);
+    el.dayLabel.textContent="Day "+Math.round(i.days);
+    el.lesiVal.textContent=m.lesi.toFixed(1);
+    el.classVal.textContent=c[0];
+    el.classVal.className="n "+c[1];
+    el.mileVal.textContent=fmtMoney(m.loadedMile);
+    el.lbVal.textContent=(m.fuelLb*100).toFixed(2)+"¢";
+    el.rlVal.textContent=m.rl.toFixed(2);
+    el.rlNote.textContent=m.rl<1?"Damping proxy (<1)":"Amplification proxy (>1)";
+    el.rlNote.className="n "+(m.rl<1?"class-manage":"class-systemic");
+    el.scenarioPill.textContent="$"+i.price.toFixed(2)+" • "+i.shortage.toFixed(0)+"% • "+Math.round(i.days)+" d";
+    var sys=findCrossing(i,50), crit=findCrossing(i,70);
+    var txt="At the selected non-duration inputs: ";
+    txt+=sys===null?"systemic band not reached by day 365":"systemic band ≈ day "+sys;
+    txt+="; ";
+    txt+=crit===null?"critical band not reached by day 365":"critical band ≈ day "+crit;
+    txt+=".";
+    el.thresholdText.textContent=txt;
+  }
+
+  function resizeCanvas(){
+    var r=el.canvas.getBoundingClientRect(), dpr=Math.min(2,window.devicePixelRatio||1);
+    var w=Math.max(300,Math.round(r.width*dpr)), h=Math.max(380,Math.round(r.height*dpr));
+    if(el.canvas.width!==w||el.canvas.height!==h){el.canvas.width=w;el.canvas.height=h}
+  }
+
+  function project(x,y,z,w,h){
+    x=(x-.5)*2.0; y=(y-.5)*1.65; z=(z-.5)*1.35;
+    var cy=Math.cos(state.yaw), sy=Math.sin(state.yaw);
+    var x1=x*cy-z*sy, z1=x*sy+z*cy;
+    var cp=Math.cos(state.pitch), sp=Math.sin(state.pitch);
+    var y2=y*cp-z1*sp, z2=y*sp+z1*cp;
+    var s=Math.min(w,h)*0.31*state.zoom;
+    return {x:w*.51+x1*s,y:h*.57-y2*s,depth:z2};
+  }
+
+  function colorFor(v,alpha){
+    var t=clamp(v,0,100)/100;
+    var h=210-(210*t);
+    var sat=72, light=48+7*(1-Math.abs(t-.5)*2);
+    return "hsla("+h+","+sat+"%,"+light+"%,"+alpha+")";
+  }
+
+  function draw(){
+    resizeCanvas();
+    var c=el.canvas, ctx=c.getContext("2d"), w=c.width,h=c.height;
+    ctx.clearRect(0,0,w,h);
+    var bg=ctx.createLinearGradient(0,0,0,h);
+    bg.addColorStop(0,"#08101f");bg.addColorStop(1,"#0a1223");
+    ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+
+    var i=inputs();
+    var cells=[], nx=20, ny=16;
+    for(var yi=0;yi<ny-1;yi++){
+      for(var xi=0;xi<nx-1;xi++){
+        var p0=4+(24-4)*xi/(nx-1), p1=4+(24-4)*(xi+1)/(nx-1);
+        var s0=40*yi/(ny-1), s1=40*(yi+1)/(ny-1);
+        var corners=[
+          [xi/(nx-1),yi/(ny-1),model(Object.assign({},i,{price:p0,shortage:s0})).lesi/100],
+          [(xi+1)/(nx-1),yi/(ny-1),model(Object.assign({},i,{price:p1,shortage:s0})).lesi/100],
+          [(xi+1)/(nx-1),(yi+1)/(ny-1),model(Object.assign({},i,{price:p1,shortage:s1})).lesi/100],
+          [xi/(nx-1),(yi+1)/(ny-1),model(Object.assign({},i,{price:p0,shortage:s1})).lesi/100]
+        ];
+        var pts=corners.map(function(q){return project(q[0],q[1],q[2],w,h)});
+        var depth=(pts[0].depth+pts[1].depth+pts[2].depth+pts[3].depth)/4;
+        var avg=(corners[0][2]+corners[1][2]+corners[2][2]+corners[3][2])*25;
+        cells.push({pts:pts,depth:depth,z:avg});
+      }
+    }
+    cells.sort(function(a,b){return a.depth-b.depth});
+    cells.forEach(function(cell){
+      ctx.beginPath();ctx.moveTo(cell.pts[0].x,cell.pts[0].y);
+      for(var k=1;k<4;k++)ctx.lineTo(cell.pts[k].x,cell.pts[k].y);
+      ctx.closePath();
+      ctx.fillStyle=colorFor(cell.z,.84);ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.10)";ctx.lineWidth=1;ctx.stroke();
+    });
+
+    // Threshold contour approximations.
+    [15,30,50,70].forEach(function(target){
+      ctx.beginPath();var started=false;
+      for(var xk=0;xk<=50;xk++){
+        var price=4+(20*xk/50), found=null;
+        for(var sk=0;sk<=80;sk++){
+          var sh=40*sk/80;
+          var z=model(Object.assign({},i,{price:price,shortage:sh})).lesi;
+          if(z>=target){found=sh;break}
+        }
+        if(found!==null){
+          var pp=project((price-4)/20,found/40,target/100,w,h);
+          if(!started){ctx.moveTo(pp.x,pp.y);started=true}else ctx.lineTo(pp.x,pp.y);
+        }
+      }
+      if(started){ctx.strokeStyle=target>=70?"rgba(255,255,255,.9)":"rgba(255,255,255,.55)";ctx.lineWidth=target>=70?2.4:1.5;ctx.stroke()}
+    });
+
+    // Axes.
+    var o=project(0,0,0,w,h), px=project(1,0,0,w,h), py=project(0,1,0,w,h), pz=project(0,0,1,w,h);
+    ctx.strokeStyle="rgba(220,232,255,.75)";ctx.lineWidth=2;
+    [[o,px],[o,py],[o,pz]].forEach(function(a){ctx.beginPath();ctx.moveTo(a[0].x,a[0].y);ctx.lineTo(a[1].x,a[1].y);ctx.stroke()});
+    ctx.fillStyle="#dbe7ff";ctx.font=Math.round(Math.max(12,w/75))+"px system-ui";
+    ctx.fillText("Diesel $/gal →",px.x-85,px.y-10);
+    ctx.fillText("Shortage % →",py.x-90,py.y+20);
+    ctx.fillText("LESI ↑",pz.x+8,pz.y);
+
+    // Selected scenario marker.
+    var mm=model(i);
+    var sx=(i.price-4)/20, sy=i.shortage/40, sz=mm.lesi/100;
+    var mp=project(sx,sy,sz,w,h);
+    ctx.beginPath();ctx.arc(mp.x,mp.y,Math.max(5,w/115),0,Math.PI*2);
+    ctx.fillStyle="#ffffff";ctx.fill();
+    ctx.lineWidth=4;ctx.strokeStyle=colorFor(mm.lesi,1);ctx.stroke();
+    ctx.fillStyle="#ffffff";ctx.font="600 "+Math.round(Math.max(12,w/78))+"px system-ui";
+    ctx.fillText(mm.lesi.toFixed(1),mp.x+12,mp.y-10);
+
+    // Floor labels.
+    ctx.fillStyle="rgba(188,204,235,.8)";ctx.font=Math.round(Math.max(10,w/92))+"px system-ui";
+    [4,8,12,16,20,24].forEach(function(v){
+      var q=project((v-4)/20,0,0,w,h);ctx.fillText("$"+v,q.x-8,q.y+16);
+    });
+    [0,10,20,30,40].forEach(function(v){
+      var q=project(0,v/40,0,w,h);ctx.fillText(v+"%",q.x-34,q.y+3);
+    });
+
+    updateReadout();
+  }
+
+  function setDay(v){
+    v=Math.round(clamp(v,7,365));
+    el.days.value=v;el.daysNum.value=v;draw();
+  }
+
+  function syncNumericToSlider(){
+    setDay(el.daysNum.value);
+  }
+
+  [el.diesel,el.shortage,el.mpg,el.payload,el.deadhead,el.inventory].forEach(function(node){
+    node.addEventListener("input",draw);
+    node.addEventListener("change",draw);
+  });
+  [el.adapt,el.pass].forEach(function(node){node.addEventListener("input",draw)});
+  el.days.addEventListener("input",function(){el.daysNum.value=el.days.value;draw()});
+  el.daysNum.addEventListener("input",syncNumericToSlider);
+
+  el.play.addEventListener("click",function(){
+    state.playing=!state.playing;
+    el.play.textContent=state.playing?"❚❚ Pause":"▶ Play duration";
+    if(state.timer){clearInterval(state.timer);state.timer=null}
+    if(state.playing){
+      state.timer=setInterval(function(){
+        var inc=Number(el.speed.value)||1, d=Number(el.days.value)+inc;
+        if(d>365)d=7;
+        setDay(d);
+      },55);
+    }
+  });
+  el.reset.addEventListener("click",function(){state.yaw=-0.72;state.pitch=0.55;state.zoom=1;draw()});
+
+  el.canvas.addEventListener("pointerdown",function(e){
+    state.drag=true;state.lastX=e.clientX;state.lastY=e.clientY;el.canvas.setPointerCapture(e.pointerId);
+  });
+  el.canvas.addEventListener("pointermove",function(e){
+    if(!state.drag)return;
+    var dx=e.clientX-state.lastX,dy=e.clientY-state.lastY;
+    state.lastX=e.clientX;state.lastY=e.clientY;
+    state.yaw+=dx*0.008;state.pitch=clamp(state.pitch+dy*0.008,-1.15,1.15);draw();
+  });
+  el.canvas.addEventListener("pointerup",function(){state.drag=false});
+  el.canvas.addEventListener("pointercancel",function(){state.drag=false});
+  el.canvas.addEventListener("wheel",function(e){
+    e.preventDefault();state.zoom=clamp(state.zoom*(e.deltaY>0?0.92:1.08),0.55,2.1);draw();
+  },{passive:false});
+
+  window.addEventListener("resize",draw);
+  draw();
+})();
+</script>
+</body>
+</html>
